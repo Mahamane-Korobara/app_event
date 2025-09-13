@@ -1,0 +1,398 @@
+Tutoriel : Inscription Utilisateur avec Laravel + Vérification Email
+1. Création des tables
+
+Laravel te fournit déjà une migration users prête à l’emploi.
+Voici ce qu’elle contient d’important :
+
+$table->id();
+$table->string('name');
+$table->string('email')->unique();
+$table->timestamp('email_verified_at')->nullable(); // Vérification email
+$table->string('password');
+$table->rememberToken(); // Gestion sessions "remember me"
+$table->timestamps(); // created_at et updated_at
+
+
+👉 email_verified_at sera rempli automatiquement quand l’utilisateur cliquera sur son lien de confirmation.
+👉 rememberToken est utilisé si tu ajoutes la case "se souvenir de moi".
+
+Exécute la migration :
+
+php artisan migrate
+
+2. Création du contrôleur
+
+On génère un contrôleur dédié à l’authentification :
+
+php artisan make:controller AuthController
+
+
+Dans ce contrôleur, on ajoute la méthode register() qui :
+
+Valide les données via RegisterRequest
+
+Hash le mot de passe
+
+Crée l’utilisateur
+
+Envoie un email de confirmation
+
+Exemple :
+
+namespace App\Http\Controllers;
+
+use App\Http\Requests\RegisterRequest;
+use App\Models\User;
+use Illuminate\Support\Facades\Hash;
+
+class AuthController extends Controller
+{
+    public function register(RegisterRequest $request)
+    {
+        $validatedData = $request->validated();
+
+        $user = User::create([
+            'name' => $validatedData['name'],
+            'email' => $validatedData['email'],
+            'password' => Hash::make($validatedData['password']),
+        ]);
+
+        // Envoie automatique de l’email de vérification
+        $user->sendEmailVerificationNotification();
+
+        return response()->json([
+            'message' => "Utilisateur {$user->name} créé avec succès. Vérifiez votre email."
+        ]);
+    }
+}
+
+3. Création de la Form Request (RegisterRequest)
+
+On génère une Form Request :
+
+php artisan make:request RegisterRequest
+
+
+Puis on définit les règles de validation :
+
+namespace App\Http\Requests;
+
+use Illuminate\Foundation\Http\FormRequest;
+
+class RegisterRequest extends FormRequest
+{
+    public function authorize(): bool
+    {
+        return true;
+    }
+
+    public function rules(): array
+    {
+        return [
+            'name' => 'required|string|max:255',
+            'email' => 'required|string|email|max:255|unique:users',
+            'password' => 'required|string|min:6',
+        ];
+    }
+
+    public function messages(): array
+    {
+        return [
+            'name.required' => 'Le nom est obligatoire',
+            'email.required' => 'L\'email est obligatoire',
+            'email.email' => 'Le format de l\'email est invalide',
+            'email.unique' => 'Cet email est déjà utilisé',
+            'password.required' => 'Le mot de passe est obligatoire',
+            'password.min' => 'Le mot de passe doit contenir au moins 6 caractères',
+        ];
+    }
+}
+
+4. Configuration du modèle User
+
+On active la vérification d’email en implémentant l’interface MustVerifyEmail :
+
+namespace App\Models;
+
+use Illuminate\Contracts\Auth\MustVerifyEmail;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Foundation\Auth\User as Authenticatable;
+use Illuminate\Notifications\Notifiable;
+
+class User extends Authenticatable implements MustVerifyEmail
+{
+    use HasFactory, Notifiable;
+
+    protected $fillable = [
+        'name', 'email', 'password',
+    ];
+
+    protected $hidden = [
+        'password', 'remember_token',
+    ];
+
+    protected function casts(): array
+    {
+        return [
+            'email_verified_at' => 'datetime',
+            'password' => 'hashed',
+        ];
+    }
+}
+
+5. Ajout de la route d’inscription avec verification
+
+On déclare la route dans routes/api.php :
+
+use App\Http\Controllers\AuthController;
+
+Route::post('/register', [AuthController::class, 'register']);
+// Vérification email
+Route::get('/email/verify/{id}/{hash}', function (EmailVerificationRequest $request) {
+    $request->fulfill(); // Marque l'email comme vérifié
+    return response()->json(['message' => 'Email vérifié avec succès !']);
+})->middleware(['auth:sanctum', 'signed'])->name('verification.verify');
+
+Route::post('/email/verification-notification', function (Request $request) {
+    $request->user()->sendEmailVerificationNotification();
+    return response()->json(['message' => 'Lien de vérification envoyé !']);
+})->middleware(['auth:sanctum', 'throttle:6,1'])->name('verification.send');
+
+Installation de MailHog
+
+Installer Go (nécessaire si tu veux compiler MailHog toi-même, mais pas obligatoire si tu prends le binaire déjà prêt) :
+
+sudo apt install golang-go
+
+
+Télécharger la version Linux prête à l’emploi depuis GitHub :
+
+wget https://github.com/mailhog/MailHog/releases/download/v1.0.1/MailHog_linux_amd64 -O MailHog
+
+
+Donner les droits d’exécution :
+
+chmod +x MailHog
+
+
+Lancer MailHog :
+
+./MailHog
+
+🚀 Utilisation
+
+Par défaut :
+
+SMTP écoute sur port 1025 → c’est là que Laravel enverra les mails.
+
+Interface Web disponible sur http://localhost:8025
+.
+
+Dans .env de Laravel, on met bien :
+
+MAIL_MAILER=smtp
+MAIL_HOST=127.0.0.1
+MAIL_PORT=1025
+MAIL_USERNAME=null
+MAIL_PASSWORD=null
+MAIL_ENCRYPTION=null
+MAIL_FROM_ADDRESS="no-reply@monapp.com"
+MAIL_FROM_NAME="App Event"
+
+SANCTUM_STATEFUL_DOMAINS=localhost,localhost:3000,127.0.0.1:8000
+
+
+est de l’inscription
+
+Envoie une requête avec Postman ou cURL :
+
+POST /api/register
+{
+  "name": "Mahamane",
+  "email": "mahamane@example.com",
+  "password": "monsecret123"
+}
+
+
+Tutoriel Complet : Authentification avec Laravel + Sanctum
+1️⃣ Créer la Form Request LoginRequest
+
+Commande artisan :
+
+php artisan make:request LoginRequest
+
+
+Ouvre ensuite app/Http/Requests/LoginRequest.php et ajoute les règles :
+
+<?php
+
+namespace App\Http\Requests;
+
+use Illuminate\Foundation\Http\FormRequest;
+
+class LoginRequest extends FormRequest
+{
+    public function authorize(): bool
+    {
+        return true;
+    }
+
+    public function rules(): array
+    {
+        return [
+            'email' => ['required', 'email'],
+            'password' => ['required', 'string', 'min:6'],
+        ];
+    }
+
+    public function messages()
+    {
+        return [
+            'email.required' => 'L’email est obligatoire',
+            'email.email' => 'L’email doit être valide',
+            'password.required' => 'Le mot de passe est obligatoire',
+            'password.min' => 'Le mot de passe doit contenir au moins 6 caractères',
+        ];
+    }
+}
+
+2️⃣ Modifier le AuthController
+
+Ajoute la méthode login() dans app/Http/Controllers/AuthController.php :
+
+<?php
+
+namespace App\Http\Controllers;
+
+use Illuminate\Http\Request;
+use App\Http\Requests\RegisterRequest;
+use App\Http\Requests\LoginRequest;
+use App\Models\User;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Auth;
+
+class AuthController extends Controller
+{
+    public function register(RegisterRequest $request)
+    {
+        $validateData = $request->validated();
+
+        $utilisateur = User::create([
+            'name' => $validateData['name'],
+            'email' => $validateData['email'],
+            'password' => Hash::make($validateData['password'])
+        ]);
+
+        // Envoyer l’email de confirmation
+        $utilisateur->sendEmailVerificationNotification();
+
+        return response()->json([
+            'message' => "Utilisateur {$utilisateur->name} créé avec succès. Vérifiez votre email pour la confirmation."
+        ]);
+    }
+
+    public function login(LoginRequest $request)
+    {
+        $infoIdentification = $request->only('email', 'password');
+
+        // Vérification des identifiants
+        if (!Auth::attempt($infoIdentification)) {
+            Log::warning('Tentative de connexion échouée', [
+                'email' => $infoIdentification['email'],
+                'ip' => $request->ip(),
+            ]);
+
+            return response()->json(['message' => 'Identifiants invalides'], 401);
+        }
+
+        $utilisateur = Auth::user();
+
+        // Création d’un token Sanctum
+        $token = $utilisateur->createToken('auth_token')->plainTextToken;
+
+        // Journalisation succès
+        Log::info('Connexion réussie', [
+            'user_id' => $utilisateur->id,
+            'ip' => $request->ip(),
+        ]);
+
+        return response()->json([
+            'message' => 'Connexion réussie',
+            'access_token' => $token,
+            'token_type' => 'Bearer',
+        ]);
+    }
+}
+
+3️⃣ Créer la route login
+
+Dans routes/api.php :
+
+use App\Http\Controllers\AuthController;
+use Illuminate\Http\Request;
+
+Route::post('/register', [AuthController::class, 'register']);
+Route::post('/login', [AuthController::class, 'login'])
+    ->middleware('throttle:5,1'); // max 5 tentatives par minute
+
+// Exemple de route protégée
+Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
+    return $request->user();
+});
+
+4️⃣ Tester avec Postman
+Requête Login
+
+Méthode : POST
+
+URL : http://127.0.0.1:8000/api/login
+
+Body (JSON) :
+
+{
+  "email": "mahamane@example.com",
+  "password": "monsecret123"
+}
+
+Réponse attendue (si identifiants valides) :
+{
+  "message": "Connexion réussie",
+  "access_token": "eyJ0eXAiOiJKV1QiLCJhbGciOi...",
+  "token_type": "Bearer"
+}
+
+5️⃣ Utiliser le token Sanctum
+
+Maintenant pour tester une route protégée :
+
+Méthode : GET
+
+URL : http://127.0.0.1:8000/api/user
+
+Headers :
+
+Authorization: Bearer TON_TOKEN
+
+
+👉 Tu recevras les infos de ton utilisateur connecté.
+
+6️⃣ Journalisation
+
+Tentatives échouées → storage/logs/laravel.log (niveau warning)
+
+Connexion réussie → storage/logs/laravel.log (niveau info)
+
+✅ Résultat Final
+
+Tu as maintenant :
+
+Validation sécurisée des identifiants.
+
+Limitation des tentatives de connexion (anti force brute).
+
+Création d’un token Sanctum après login.
+
+Journalisation des tentatives.
+
+Accès sécurisé aux routes protégées via auth:sanctum.

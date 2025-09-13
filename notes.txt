@@ -1,6 +1,0 @@
-JSON utilisé pour la creation d'un compte:
-{
-  "name": "Mahamane",
-  "email": "mahamane@example.com",
-  "password": "monsecret123"
-}
