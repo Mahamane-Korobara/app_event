@@ -4,6 +4,7 @@ use Illuminate\Foundation\Auth\EmailVerificationRequest;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\AuthController;
+use App\Http\Controllers\EventController;
 
 // Authentification
 Route::post('/register', [AuthController::class, 'register']);
@@ -32,3 +33,7 @@ Route::post('/email/verification-notification', function (Request $request) {
     $request->user()->sendEmailVerificationNotification();
     return response()->json(['message' => 'Lien de vérification envoyé !']);
 })->middleware(['auth:sanctum', 'throttle:6,1'])->name('verification.send');
+
+
+// Routes pour la gestion des événements
+Route::post('/events', [EventController::class, 'create'])->middleware('auth:sanctum');
